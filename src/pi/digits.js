@@ -1,41 +1,73 @@
-// Machin's formula:  π = 16·arctan(1/5) − 4·arctan(1/239)
-// Each arctan series only divides a huge integer by a tiny one → very fast in BigInt.
+// π computed in a Web Worker (Machin's formula, BigInt) so the UI never freezes.
 
-export const PI_COUNT = 20000;
+export const TIERS = [
+  { n: 10000, l: '10K' },
+  { n: 50000, l: '50K' },
+  { n: 100000, l: '100K' },
+  { n: 200000, l: '200K' },
+];
+export const COUNT_DEFAULT = 50000;
 
-const CHECK_50 = '14159265358979323846264338327950288419716939937510';
-
-function arctanInv(x, decimals) {
-  const guard = 12;
-  const scale = 10n ** BigInt(decimals + guard);
-  const xBig = BigInt(x);
-  const x2 = xBig * xBig;
-  let term = scale / xBig;
-  let sum = 0n;
-  let k = 0;
+const WORKER_SRC = `
+function arctanInv(x, decimals, guard, onProg) {
+  var scale = 10n ** BigInt(decimals + guard);
+  var xB = BigInt(x), x2 = xB * xB;
+  var term = scale / xB, sum = 0n, k = 0;
+  var total = Math.ceil((decimals + guard) / (2 * Math.log10(x))) + 1;
   while (term > 0n) {
-    const piece = term / BigInt(2 * k + 1);
-    if ((k & 1) === 0) sum += piece;
-    else sum -= piece;
+    var piece = term / BigInt(2 * k + 1);
+    if (k & 1) sum -= piece; else sum += piece;
     term /= x2;
-    k += 1;
+    if ((k & 1023) === 0) onProg(k / total);
+    k++;
   }
+  onProg(1);
   return sum / 10n ** BigInt(guard);
 }
+self.onmessage = function (e) {
+  var n = e.data, guard = 12;
+  var w1 = Math.ceil(n / 1.4), w2 = Math.ceil(n / 4.76);
+  var a = arctanInv(5, n, guard, function (p) {
+    self.postMessage({ type: 'p', v: (p * w1) / (w1 + w2) });
+  });
+  var b = arctanInv(239, n, guard, function (p) {
+    self.postMessage({ type: 'p', v: (w1 + p * w2) / (w1 + w2) });
+  });
+  var pi = (16n * a - 4n * b).toString();
+  var digits = pi.charAt(0) === '3' ? pi.slice(1, 1 + n) : pi.slice(0, n);
+  self.postMessage({ type: 'done', digits: digits });
+};
+`;
 
-let cache = null;
+const cache = new Map();
 
-export function computePiDigits(count = PI_COUNT) {
-  cache ??= (async () => {
-    const tick = () => new Promise(r => setTimeout(r, 30)); // let the loading state paint
-    await tick();
-    const a = arctanInv(5, count + 1);
-    await tick();
-    const b = arctanInv(239, count + 1);
-    const pi = (16n * a - 4n * b).toString(); // "31415…" × 10^n
-    const digits = pi.startsWith('3') ? pi.slice(1, 1 + count) : pi.slice(0, count);
-    if (!digits.startsWith(CHECK_50)) console.warn('PiLex: π self-check failed');
-    return digits;
-  })();
-  return cache;
+export function computePiDigits(count, onProgress) {
+  if (cache.has(count)) {
+    // instant replay for already-computed tiers
+    const done = cache.get(count);
+    if (done.then) return done;
+    return Promise.resolve(done);
+  }
+  const promise = new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([WORKER_SRC], { type: 'application/javascript' }));
+    const worker = new Worker(url);
+    worker.onmessage = e => {
+      const m = e.data;
+      if (m.type === 'p') onProgress?.(m.v);
+      else {
+        worker.terminate();
+        URL.revokeObjectURL(url);
+        cache.set(count, m.digits);
+        resolve(m.digits);
+      }
+    };
+    worker.onerror = err => {
+      worker.terminate();
+      URL.revokeObjectURL(url);
+      reject(err);
+    };
+    worker.postMessage(count);
+  });
+  cache.set(count, promise);
+  return promise;
 }
