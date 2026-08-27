@@ -1,21 +1,22 @@
 # PiLex
 
-A mathematical art experiment: the first 20,000 digits of π computed live,
-scattered as a living typographic field, translated into letters, and searched
-like a dictionary.
+π printed as a real sheet of numbers — starting at 3.14159… and scrolling
+towards infinity. Type any word and its number-form (PI → 169) gets
+**marker-highlighted** everywhere it appears in π, like highlighting a notebook.
 
 ## Run
     npm install
     npm run dev
 
-## Interaction
-- Type a word — matches appear as solid black bands inside the digit field.
-- Click a № position (or press Enter / ←→) to glide the camera to a match.
-- Hover or touch the field: digits drift away and reveal their letters.
-- Click any digit to read its position and letter. Drag / scroll to descend.
-- Switch mappings: A=1 · A=0 · Σ mod 26 · digit pairs mod 26.
-- `/` focuses search · Esc clears.
+## Use
+- Type a word → its digits are searched in π, matches get drawn with an
+  animated marker stroke. Typing raw digits (e.g. `169` or `31415`) also works.
+- Click a № position, a black band, or use Enter / ‹ › to jump between matches.
+- Hover any digit to see its position. Drag / scroll to descend.
+- Pick a digit count (10K → 200K); π computes in a worker with live progress.
+- Encoders: A1Z26 (A=1…Z=26) or phone keypad.
 
-## Performance notes
-- One canvas, sprite-cached glyphs (rotation baked in), typed-array layout,
-  row culling, DPR capped at 2 — thousands of glyphs at 60fps.
+## Note on 10 million digits
+A 10M-digit run is minutes of BigInt work + heavy RAM in a browser tab;
+the tier list caps at 200K by default. Add a bigger tier in `src/pi/digits.js`
+(`TIERS`) if you want to push it on a desktop machine.
